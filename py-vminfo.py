@@ -31,7 +31,7 @@ def GetArgs():
     parser.add_argument('-c', '--cert_check_skip', required=False, action='store_true', help='skip ssl certificate check')
     parser.add_argument('-t', '--summary_stats', required=False, action='store_true',
                         help='lists basic statistics for all known VMs')
-    parser.add_argument('-f', '--filter_hosts', required=False, action='store', help='On eor more Virtual Machines to report on')
+    parser.add_argument('-f', '--filter_hosts', required=False, action='store', help='comma-separated list of ESX hosts to include only VMs running on these hosts')
     parser.add_argument('-i', '--interval', type=int, default=15, action='store',
                         help='Interval to average the vSphere stats over')
     args = parser.parse_args()
