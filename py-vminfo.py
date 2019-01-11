@@ -273,7 +273,8 @@ def main():
 
         from prettytable import PrettyTable
         pt = PrettyTable()
-        pt.field_names = ["VM", "HOST", "RD IOPS", "RD delay", "WR IOPS", "WR delay"]
+        pt.field_names = ["VM", "HOST", "RD IOPS", "RD delay", "WR IOPS", "WR delay", "DISKs"]
+        pt.align["DISKs"] = "l"
 
         for vm in retProps:
                 if vmnames:
@@ -311,6 +312,19 @@ def main():
                                                                "*", vm['moref'], interval)
                             DatastoreLatWrite = (float(sum(statDatastoreLatWrite[0].value[0].value)) / statInt)
 
+                            vm_hardware = vm['moref'].config.hardware
+                            disk_list = []
+                            for each_vm_hardware in vm_hardware.device:
+                                if (each_vm_hardware.key >= 2000) and (each_vm_hardware.key < 3000):
+                                    disk_format = "THICK"
+                                    if each_vm_hardware.backing.thinProvisioned:
+                                        disk_format = "thin "
+                                    disk_list.append(
+                                        '{} | {} | {:.1f}GB | {}]'.format(each_vm_hardware.deviceInfo.label,
+                                                                          disk_format,
+                                                                          each_vm_hardware.capacityInKB / 1024 / 1024,
+                                                                          each_vm_hardware.backing.fileName.split("]")[0]))
+
                             vals_for_row = []
                             vals_for_row.append(vm['name'])
                             vals_for_row.append(host)
@@ -318,6 +332,7 @@ def main():
                             vals_for_row.append("%.1f" % float(DatastoreLatRead))
                             vals_for_row.append("%.0f" % float(DatastoreIoWrite))
                             vals_for_row.append("%.1f" % float(DatastoreLatWrite))
+                            vals_for_row.append("%s" % str("\n".join(disk_list)))
                             #    = [vm['name'], host, "%.0f" % float(DatastoreIoRead), "%.0f" % float(DatastoreIoWrite)]
                             pt.add_row(vals_for_row)
                             import sys
