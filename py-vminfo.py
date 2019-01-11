@@ -27,8 +27,11 @@ def GetArgs():
     parser.add_argument('-u', '--user', required=True, action='store', help='User name to use when connecting to host')
     parser.add_argument('-p', '--password', required=False, action='store',
                         help='Password to use when connecting to host')
-    parser.add_argument('-m', '--vm', required=True, action='store', help='On eor more Virtual Machines to report on')
+    parser.add_argument('-m', '--vm', required=False, action='store', help='On eor more Virtual Machines to report on')
     parser.add_argument('-c', '--cert_check_skip', required=False, action='store_true', help='skip ssl certificate check')
+    parser.add_argument('-t', '--summary_stats', required=False, action='store_true',
+                        help='lists basic statistics for all known VMs')
+    parser.add_argument('-f', '--filter_hosts', required=False, action='store', help='On eor more Virtual Machines to report on')
     parser.add_argument('-i', '--interval', type=int, default=15, action='store',
                         help='Interval to average the vSphere stats over')
     args = parser.parse_args()
@@ -224,6 +227,10 @@ def main():
     args = GetArgs()
     try:
         vmnames = args.vm
+        if not vmnames:
+            if not args.summary_stats:
+                print("missing virtual machine name -m/-vm  or summary stats -t/--summary_stats action switch")
+                exit(1)
         si = None
         if args.password:
             password = args.password
@@ -263,11 +270,66 @@ def main():
         retProps = GetProperties(content, [vim.VirtualMachine], ['name', 'runtime.powerState'], vim.VirtualMachine)
 
         #Find VM supplied as arg and use Managed Object Reference (moref) for the PrintVmInfo
+
+        from prettytable import PrettyTable
+        pt = PrettyTable()
+        pt.field_names = ["VM", "HOST", "RD IOPS", "RD delay", "WR IOPS", "WR delay"]
+
         for vm in retProps:
-            if (vm['name'] in vmnames) and (vm['runtime.powerState'] == "poweredOn"):
-                PrintVmInfo(vm['moref'], content, vchtime, args.interval, perf_dict)
-            elif vm['name'] in vmnames:
-                print('ERROR: Problem connecting to Virtual Machine.  {} is likely powered off or suspended'.format(vm['name']))
+                if vmnames:
+                    if (vm['name'] in vmnames) and (vm['runtime.powerState'] == "poweredOn"):
+                        PrintVmInfo(vm['moref'], content, vchtime, args.interval, perf_dict)
+                    elif vm['name'] in vmnames:
+                        print('ERROR: Problem connecting to Virtual Machine.  {} is likely powered off or suspended'.format(vm['name']))
+                elif args.summary_stats:
+                    try:
+                        if vm['runtime.powerState'] == "poweredOn":
+                            if args.filter_hosts:
+                                if vm['moref'].runtime.host.name.upper() not in [item.upper() for item in args.filter_hosts.split(",")]:
+                                    continue
+                            host = vm['moref'].runtime.host.name
+
+                            interval = args.interval
+                            statInt = interval * 3
+
+                            # Datastore Average IO
+                            statDatastoreIoRead = BuildQuery(content, vchtime,
+                                                             (StatCheck(perf_dict, 'datastore.numberReadAveraged.average')),
+                                                             "*", vm['moref'], interval)
+                            DatastoreIoRead = (float(sum(statDatastoreIoRead[0].value[0].value)) / statInt)
+                            statDatastoreIoWrite = BuildQuery(content, vchtime,
+                                                              (StatCheck(perf_dict, 'datastore.numberWriteAveraged.average')),
+                                                              "*", vm['moref'], interval)
+                            DatastoreIoWrite = (float(sum(statDatastoreIoWrite[0].value[0].value)) / statInt)
+                            # Datastore Average Latency
+                            statDatastoreLatRead = BuildQuery(content, vchtime,
+                                                              (StatCheck(perf_dict, 'datastore.totalReadLatency.average')),
+                                                              "*", vm['moref'], interval)
+                            DatastoreLatRead = (float(sum(statDatastoreLatRead[0].value[0].value)) / statInt)
+                            statDatastoreLatWrite = BuildQuery(content, vchtime,
+                                                               (StatCheck(perf_dict, 'datastore.totalWriteLatency.average')),
+                                                               "*", vm['moref'], interval)
+                            DatastoreLatWrite = (float(sum(statDatastoreLatWrite[0].value[0].value)) / statInt)
+
+                            vals_for_row = []
+                            vals_for_row.append(vm['name'])
+                            vals_for_row.append(host)
+                            vals_for_row.append("%.0f" % float(DatastoreIoRead))
+                            vals_for_row.append("%.1f" % float(DatastoreLatRead))
+                            vals_for_row.append("%.0f" % float(DatastoreIoWrite))
+                            vals_for_row.append("%.1f" % float(DatastoreLatWrite))
+                            #    = [vm['name'], host, "%.0f" % float(DatastoreIoRead), "%.0f" % float(DatastoreIoWrite)]
+                            pt.add_row(vals_for_row)
+                            import sys
+                            sys.stdout.write(".")
+                            #print(pt.get_string())
+                            #print("VM: %s \t %s \t %.0f \t %.0f" % ())#vm['moref'].summary.config.name))
+                    except Exception as e:
+                        if len(e.message.strip()) > 5:
+                            print(e.message.strip())
+        if args.summary_stats:
+            print("")
+            print(pt.get_string())
 
     except vmodl.MethodFault as e:
         print('Caught vmodl fault : ' + e.msg)
